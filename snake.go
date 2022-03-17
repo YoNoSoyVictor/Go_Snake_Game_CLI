@@ -22,6 +22,7 @@ const upKey string = "w"
 const leftKey string = "a"
 const downKey string = "s"
 const rightKey string = "d"
+
 const quitKey string = "q"
 
 // APPEARANCE
@@ -48,6 +49,7 @@ func main() {
 	flag.IntVar(&length, "length", 16, "Length of the board.")
 	flag.IntVar(&height, "heigth", 12, "Heigth of the board.")
 	flag.IntVar(&speed, "speed", 100, "Speed of the game, in milliseconds.")
+
 	flag.Parse()
 
 	//initializing elements and variables
@@ -64,6 +66,13 @@ func main() {
 
 	gamechannel := make(chan string)
 
+	moveOptions := map[string]movement{
+		upKey:    {downKey, snake.moveUp},
+		leftKey:  {rightKey, snake.moveLeft},
+		downKey:  {upKey, snake.moveDown},
+		rightKey: {leftKey, snake.moveRight},
+	}
+
 	//hide inputs
 	hideInput()
 	defer showInput()
@@ -71,65 +80,38 @@ func main() {
 	//wait for input to start game
 
 	printBoard(myboard.layout, nil, length)
-	snake.currentdirection = readkeyNoChannel()
+	b := readkeyNoChannel()
+	snake.currentdirection = moveOptions[b]
 
 gameloop:
 	for {
+
+		//input
 		go readkey(gamechannel)
 
+		//refresh screen
 		printBoard(myboard.layout, snake.coordinates, length)
 
+		//refresh rate
 		time.Sleep(sleeptime * time.Millisecond)
 
+		//change direction if key pressed. Also prevents going to opposite direction
 		select {
 		case key := <-gamechannel:
-			if key == leftKey {
-				if snake.currentdirection == rightKey {
-					snake.moveRight()
-				} else {
-					snake.moveLeft()
-					snake.currentdirection = leftKey
-				}
-
-			} else if key == downKey {
-				if snake.currentdirection == upKey {
-					snake.moveUp(length)
-				} else {
-					snake.moveDown(length)
-					snake.currentdirection = downKey
-				}
-			} else if key == rightKey {
-				if snake.currentdirection == leftKey {
-					snake.moveLeft()
-				} else {
-					snake.moveRight()
-					snake.currentdirection = rightKey
-				}
-			} else if key == upKey {
-				if snake.currentdirection == downKey {
-					snake.moveDown(length)
-				} else {
-					snake.moveUp(length)
-					snake.currentdirection = upKey
-				}
-			} else if key == quitKey {
+			if key == quitKey {
 				break gameloop
 			}
-
-		default:
-			if snake.currentdirection == leftKey {
-				snake.moveLeft()
-			} else if snake.currentdirection == downKey {
-				snake.moveDown(length)
-			} else if snake.currentdirection == rightKey {
-				snake.moveRight()
-			} else if snake.currentdirection == upKey {
-				snake.moveUp(length)
+			if snake.currentdirection.opposite != key {
+				snake.currentdirection = moveOptions[key]
 			}
+		default:
 		}
+		snake.currentdirection.move(length)
 
+		//calculates the head coordinates
 		snake.headcoordinate = snake.coordinates[len(snake.coordinates)-1]
 
+		//spawns new fruit if in a fruit tile. Else loses last segment of tail.
 		if snake.atefruit == true {
 			myboard.layout[getRandIntWithExclusion(length, totaltiles, append(myboard.occupiedTiles, snake.coordinates...))] = food
 		} else {
@@ -137,14 +119,17 @@ gameloop:
 		}
 		snake.atefruit = false
 
+		//check if out of bounds
 		if myboard.layout[snake.headcoordinate] == vertLim || myboard.layout[snake.headcoordinate] == horzLim {
 			break
 		}
 
+		//checks if snake collided with itself
 		if checkDuplicateInt(snake.coordinates) == true {
 			break
 		}
 
+		//check if head in food tile
 		if myboard.layout[snake.headcoordinate] == food {
 			snake.atefruit = true
 			myboard.layout[snake.headcoordinate] = void
@@ -159,23 +144,28 @@ type snake struct {
 	coordinates      []int // the last value is the head.
 	atefruit         bool
 	headcoordinate   int
-	currentdirection string
+	currentdirection movement
 }
 
 type board struct {
 	layout        []string // layout of the board.
-	occupiedTiles []int    // holds the coordinates of the tiles where the snake can't step. Faster to parse than layout.
+	occupiedTiles []int    // holds the coordinates of the tiles out of bounds. Faster to parse than layout.
 	height        int
 	length        int
 }
 
+type movement struct {
+	opposite string
+	move     func(length int)
+}
+
 // ##### SNAKE MOVEMENT #####
 
-func (s *snake) moveLeft() {
+func (s *snake) moveLeft(l int) {
 	s.coordinates = append(s.coordinates, s.coordinates[len(s.coordinates)-1]-1)
 }
 
-func (s *snake) moveRight() {
+func (s *snake) moveRight(l int) {
 	s.coordinates = append(s.coordinates, s.coordinates[len(s.coordinates)-1]+1)
 }
 
@@ -188,6 +178,7 @@ func (s *snake) moveDown(l int) {
 	s.coordinates = append(s.coordinates, s.coordinates[len(s.coordinates)-1]+l+2)
 }
 
+//loses the last tile of the tail. Will execute if the snake didn't eat a fruit.
 func (s *snake) loseTail() {
 	s.coordinates = s.coordinates[1:]
 }
@@ -196,7 +187,7 @@ func (s *snake) loseTail() {
 
 func (b *board) createBoard() {
 
-	//creates the board layout where the snake will move, visual purposes.
+	//creates the board layout where the snake will move, visual purpose.
 	var height int = b.height + 2
 	var length = b.length + 2
 
